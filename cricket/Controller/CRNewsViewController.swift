@@ -7,6 +7,7 @@
 
 import UIKit
 import CoreData
+import Kingfisher
 
 class CRNewsViewController: UIViewController {
     @IBOutlet weak var topicLabel: UILabel!
@@ -18,7 +19,7 @@ class CRNewsViewController: UIViewController {
     private var reachability: Reachability!
     lazy var page: Int = 1
     lazy var totalSize = 0
-    
+    var activityView = UIActivityIndicatorView(style: UIActivityIndicatorView.Style.medium)
     var resultArray : [Result1] = []
     var people: [NSManagedObject] = []
     let noDataLabel = UILabel(frame: CGRect(x: 0, y: 0, width: 200, height: 21))
@@ -29,12 +30,47 @@ class CRNewsViewController: UIViewController {
         }
     }
     
+    lazy var refreshControl: UIRefreshControl = {
+        let refreshControl = UIRefreshControl()
+        refreshControl.addTarget(self, action: #selector(self.handleRefresh(_:)), for: .valueChanged)
+        refreshControl.tintColor = UIColor.lightGray
+        return refreshControl
+    }()
+    
+    @objc func handleRefresh(_ refreshControl: UIRefreshControl) {
+        if !Reachability.isConnectedToNetwork() { return }
+        deleteEntityItems()
+        
+        if let text = UserDefaults.standard.string(forKey: "UserEnteredSearchText"){
+            self.fetchData(searchText: text, page: 1)
+        }
+    
+        refreshControl.endRefreshing()
+        
+    }
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         configureUI()
         registerTableViewCell()
         checkForNetworkConnection()
         observeReachability()
+        self.newsTableView.addSubview(refreshControl)
+    }
+    
+    func showActivityIndicatory() {
+        //newsTableView.isHidden = true
+        activityView.center = self.view.center
+        activityView.color = .black
+        self.view.addSubview(activityView)
+        activityView.startAnimating()
+        activityView.isHidden = false
+    }
+    
+    func hideActivityIndicator(){
+       // newsTableView.isHidden = false
+        activityView.stopAnimating()
+    
     }
     
     func observeReachability(){
@@ -108,8 +144,6 @@ class CRNewsViewController: UIViewController {
         searchTextField.layer.borderWidth = 1.0
         searchTextField.layer.borderColor = UIColor.black.cgColor
         
-        //UIButton UI
-        // searchButton.backgroundColor = UIColor(red: 171/255, green: 178/255, blue: 186/255, alpha: 1.0)
         // Shadow Color and Radius
         searchButton.layer.shadowColor = UIColor(red: 0, green: 0, blue: 0, alpha: 0.25).cgColor
         searchButton.layer.shadowOffset = CGSize(width: 0.0, height: 2.0)
@@ -148,11 +182,12 @@ class CRNewsViewController: UIViewController {
         dataTask?.cancel()
         
         if var urlComponents = URLComponents(string: Constants.apiUrl) {
-            urlComponents.query = "page=\(page)&page-size=10&q=\(searchText.lowercased())&api-key=\(Constants.apiKey)"
+            urlComponents.query = "show-fields=body,thumbnail&page=\(page)&page-size=10&q=\(searchText.lowercased())&api-key=\(Constants.apiKey)"
             
             guard  let url = urlComponents.url else {
                 return
             }
+          
             dataTask = defaultSession.dataTask(with: url) { data, response, error in
                 if error != nil {
                     self.handleError()
@@ -169,6 +204,7 @@ class CRNewsViewController: UIViewController {
                             self.updateTableView(valueArr: self.resultArray)
                         }
                     } catch {
+                        print(error)
                         self.handleError()
                     }
                 }
@@ -197,8 +233,6 @@ class CRNewsViewController: UIViewController {
             self.newsTableView.isHidden = false
             self.noDataLabel.isHidden = true
             self.newsTableView.reloadData()
-            
-            
         }
     }
     
@@ -218,6 +252,7 @@ class CRNewsViewController: UIViewController {
                 self.topicLabel.isHidden = true
                 self.noDataLabel.text = Constants.provideSearchText
             } else {
+                showActivityIndicatory()
                 UserDefaults.standard.setValue(searchText, forKey: "UserEnteredSearchText")
                 fetchData(searchText: searchText, page: 1)
                 self.topicLabel.text = searchText.uppercased()
@@ -230,6 +265,8 @@ class CRNewsViewController: UIViewController {
             self.noDataLabel.text = Constants.provideSearchText
         }
     }
+    
+    
 }
 
 
@@ -245,21 +282,31 @@ extension CRNewsViewController : UITableViewDelegate, UITableViewDataSource, UIS
         if UIDevice.current.orientation.isLandscape {
             return 100
         } else  if UIDevice.current.orientation.isPortrait {
-            return 140
+            return 160
         }
-        return 140
+        return 160
     }
     
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        
+        if newsTableView.isHidden == true {
+            hideActivityIndicator()
+        }
         let person = people[indexPath.row]
         self.newsTableView.isHidden = false
         let cell = tableView.dequeueReusableCell(withIdentifier: "CRNewsTableViewCell") as! CRNewsTableViewCell
         
         if let title = person.value(forKeyPath: "title") as? String,
-           let date = person.value(forKeyPath: "date") as? String {
-            cell.titleLabel.text = title
-            cell.bodyLabel.text = title
-            cell.dateLabel.text = self.configureDate(date: date)
+           let date = person.value(forKeyPath: "date") as? String,
+           let photo = person.value(forKeyPath: "photo") as? Data,
+           let body = person.value(forKeyPath: "body") as? String,
+           let imageUrl = person.value(forKeyPath: "imageUrl") as? String{
+
+                cell.titleLabel.text = title
+                cell.bodyLabel.text = body
+                cell.dateLabel.text = self.configureDate(date: date)
+                cell.downloadImage(url: imageUrl)
+                activityView.isHidden = true
         }
         cell.selectionStyle = .none
         cell.layer.cornerRadius = 10
@@ -281,16 +328,24 @@ extension CRNewsViewController : UITableViewDelegate, UITableViewDataSource, UIS
                let date = person.value(forKeyPath: "date") as? String,
                let url = person.value(forKeyPath: "apiUrl") as? String,
                let sectionName = person.value(forKeyPath: "sectionName") as? String,
+               let body = person.value(forKeyPath: "body") as? String,
+               let photo = person.value(forKeyPath: "photo") as? Data,
+               let imageUrl = person.value(forKeyPath: "imageUrl") as? String,
                let text = UserDefaults.standard.string(forKey: "UserEnteredSearchText") {
                 
+                if let image = UIImage(data: photo as Data) {
+                    resultViewController.newsImageView.image = image
+                } 
                 resultViewController.webPublicationTitleLabel.text = title
                 resultViewController.webPublicationDateLabel.text = "Date: \(self.configureDate(date: date))"
-                resultViewController.bodyLabel.addLineSpacing(text: Constants.bodyText)
+                resultViewController.bodyLabel.addLineSpacing(text: body)
                 resultViewController.webUrlLabel.text = url
                 resultViewController.sectionNameLabel.text = "Section: \(sectionName)"
                 resultViewController.url = url
-                resultViewController.newsImageView.image = UIImage(named: "8192")
+               
                 resultViewController.title = text.firstUppercased
+                resultViewController.downloadImage(url: imageUrl)
+
             }
         }
     }
@@ -368,6 +423,23 @@ protocol ReusableView: AnyObject {}
 
 extension CRNewsViewController {
     
+    
+    func getData(from url: URL, completion: @escaping (Data?, URLResponse?, Error?) -> ()) {
+        URLSession.shared.dataTask(with: url, completionHandler: completion).resume()
+    }
+    
+    func downloadImage(from url: URL) -> Data {
+        var imageData: Data? = nil
+        getData(from: url) { [weak self] data, response, error in
+            guard let data = data, error == nil else { return }
+            //print(response?.suggestedFilename ?? url.lastPathComponent)
+           imageData = data
+        }
+        
+        let image = UIImage(named: "apple")?.pngData()
+        return imageData ?? image as! Data
+    }
+    
     //MARK: Save data to SQLlite
     func save(valueArr: [Result1]) {
         
@@ -377,12 +449,28 @@ extension CRNewsViewController {
             let managedContext = appDelegate.persistentContainer.viewContext
             
             for i in 0..<valueArr.count {
-                let person = NSEntityDescription.insertNewObject(forEntityName: "Cricket", into: managedContext)
-                person.setValue(valueArr[i].webUrl, forKey: "apiUrl")
-                person.setValue(valueArr[i].webTitle, forKey: "title")
-                person.setValue(valueArr[i].sectionName, forKey: "sectionName")
-                person.setValue(valueArr[i].webPublicationDate, forKey: "date")
-                self.people.append(person)
+ 
+                if let body = valueArr[i].fields.body,
+                   let thumbNail = valueArr[i].fields.thumbnail{
+                    
+                    let person = NSEntityDescription.insertNewObject(forEntityName: "Cricket", into: managedContext)
+                    
+                    let htmlString = body
+                    let htmlData = Data(htmlString.utf8)
+                    
+                    let imageDate = self.downloadImage(from: URL(string: thumbNail)!)
+                    let img = UIImage(data: imageDate)
+                    let imgData = img?.jpegData(compressionQuality: 1)
+                    
+                    person.setValue(imgData, forKey: "photo")
+                    person.setValue(valueArr[i].webUrl, forKey: "apiUrl")
+                    person.setValue(valueArr[i].webTitle, forKey: "title")
+                    person.setValue(valueArr[i].sectionName, forKey: "sectionName")
+                    person.setValue(valueArr[i].webPublicationDate, forKey: "date")
+                    person.setValue(htmlData.htmlToAttributedString?.string, forKey: "body")
+                    person.setValue(valueArr[i].fields.thumbnail, forKey: "imageUrl")
+                    self.people.append(person)
+                } 
             }
             
             do {
@@ -434,23 +522,53 @@ extension StringProtocol {
     var firstCapitalized: String { return prefix(1).capitalized + dropFirst() }
 }
 
-extension UITableView {
-    
-    func reloadWithAnimation() {
-        self.reloadData()
-        let tableViewHeight = self.bounds.size.height
-        let cells = self.visibleCells
-        var delayCounter = 0
-        for cell in cells {
-            cell.transform = CGAffineTransform(translationX: 0, y: tableViewHeight)
-        }
-        for cell in cells {
-            UIView.animate(withDuration: 1.6, delay: 0.08 * Double(delayCounter),usingSpringWithDamping: 0.6, initialSpringVelocity: 0, options: .curveEaseInOut, animations: {
-                cell.transform = CGAffineTransform.identity
-            }, completion: nil)
-            delayCounter += 1
+extension NSAttributedString {
+    convenience init(data: Data, documentType: DocumentType, encoding: String.Encoding = .utf8) throws {
+        try self.init(data: data,
+                      options: [.documentType: documentType,
+                                .characterEncoding: encoding.rawValue],
+                      documentAttributes: nil)
+    }
+    convenience init(html data: Data) throws {
+        try self.init(data: data, documentType: .html)
+    }
+    convenience init(txt data: Data) throws {
+        try self.init(data: data, documentType: .plain)
+    }
+    convenience init(rtf data: Data) throws {
+        try self.init(data: data, documentType: .rtf)
+    }
+    convenience init(rtfd data: Data) throws {
+        try self.init(data: data, documentType: .rtfd)
+    }
+}
+
+extension StringProtocol {
+    var data: Data { return Data(utf8) }
+    var htmlToAttributedString: NSAttributedString? {
+        do {
+            return try .init(html: data)
+        } catch {
+            print("html error:", error)
+            return nil
         }
     }
+    var htmlDataToString: String? {
+        return htmlToAttributedString?.string
+    }
+}
+
+extension Data {
+    var htmlToAttributedString: NSAttributedString? {
+        do {
+            return try .init(html: self)
+        } catch {
+            print("html error:", error)
+            return nil
+        }
+
+    }
+
 }
 
 

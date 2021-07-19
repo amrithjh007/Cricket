@@ -6,6 +6,7 @@
 //
 
 import UIKit
+import Kingfisher
 
 class CRNewsDetailViewController: UIViewController {
     @IBOutlet weak var webPublicationDateLabel: UILabel!
@@ -44,6 +45,33 @@ class CRNewsDetailViewController: UIViewController {
     func configureBasicUI(){
         webUrlLabel.isUserInteractionEnabled = true
     }
+    
+    
+    func downloadImage(url: String){
+        let url = URL(string: url)
+        let processor = DownsamplingImageProcessor(size: newsImageView.bounds.size)
+                     |> RoundCornerImageProcessor(cornerRadius: 0)
+        newsImageView.kf.indicatorType = .activity
+        newsImageView.kf.setImage(
+            with: url,
+            placeholder: UIImage(named: "placeholderImage"),
+            options: [
+                .processor(processor),
+                .scaleFactor(UIScreen.main.scale),
+                .transition(.fade(1)),
+                .cacheOriginalImage
+            ])
+        {
+            result in
+            switch result {
+            case .success(let value):
+                print("Task done for: \(value.source.url?.absoluteString ?? "")")
+            case .failure(let error):
+                print("Job failed: \(error.localizedDescription)")
+            }
+        }
+    }
+    
 }
 
 extension UILabel {

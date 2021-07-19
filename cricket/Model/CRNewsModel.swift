@@ -33,6 +33,7 @@ struct Result1: Codable {
     let isHosted: Bool
     let pillarId: PillarID
     let pillarName: PillarName
+    let fields: Fields
 
     enum CodingKeys: String, CodingKey {
         case id, type
@@ -43,7 +44,14 @@ struct Result1: Codable {
         case isHosted
         case pillarId
         case pillarName
+        case fields
     }
+}
+
+// MARK: - Fields
+struct Fields: Codable {
+    let body: String?
+    let thumbnail: String?
 }
 
 enum PillarID: String, Codable {

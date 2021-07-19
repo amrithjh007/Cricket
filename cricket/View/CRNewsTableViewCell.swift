@@ -6,6 +6,7 @@
 //
 
 import UIKit
+import Kingfisher
 
 class CRNewsTableViewCell: UITableViewCell {
     @IBOutlet weak var cellImageView: UIImageView!
@@ -26,7 +27,6 @@ class CRNewsTableViewCell: UITableViewCell {
         super.layoutSubviews()
         setupShadow()
         contentView.frame = contentView.frame.inset(by: UIEdgeInsets(top: 3, left: 0, bottom: 3, right: 0))
-        //shadowView.frame = contentView.frame
         contentView.layer.cornerRadius = 10
     }
     
@@ -54,12 +54,32 @@ class CRNewsTableViewCell: UITableViewCell {
         newDate = dateformatter.string(from: convertStringToDate!)
         
         self.dateLabel.text = "\(newDate)"
-        
-        
         self.titleLabel.text = result.webTitle
-        // self.bodyLabel.text = result.webUrl
-        self.cellImageView.image = UIImage(named: "apple")
-        
+    }
+    
+    func downloadImage(url: String){
+        let url = URL(string: url)
+        let processor = DownsamplingImageProcessor(size: cellImageView.bounds.size)
+                     |> RoundCornerImageProcessor(cornerRadius: 0)
+        cellImageView.kf.indicatorType = .activity
+        cellImageView.kf.setImage(
+            with: url,
+            placeholder: UIImage(named: "placeholderImage"),
+            options: [
+                .processor(processor),
+                .scaleFactor(UIScreen.main.scale),
+                .transition(.fade(1)),
+                .cacheOriginalImage
+            ])
+        {
+            result in
+            switch result {
+            case .success(let value):
+                print("Task done for: \(value.source.url?.absoluteString ?? "")")
+            case .failure(let error):
+                print("Job failed: \(error.localizedDescription)")
+            }
+        }
     }
     
     override func setSelected(_ selected: Bool, animated: Bool) {
